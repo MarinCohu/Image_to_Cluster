@@ -96,10 +96,10 @@ Cet atelier, **noté sur 20 points**, est évalué sur la base du barème suivan
 ------------------------------------------------------------------------------------------------------
 
 
-**1. Installation des outils (Packer & Ansible)**
+# **1. Installation des outils (Packer & Ansible)**
 Dans le terminal Codespaces, installation des dépendances manquantes :
 
-# Installation de Packer
+1.1 Installation de Packer
 ```
 curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
 sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
@@ -107,18 +107,18 @@ sudo rm -f /etc/apt/sources.list.d/yarn.list
 sudo apt-get update && sudo apt-get install -y packer
 ```
 
-# Installation du module Python pour Kubernetes
+1.2 Installation du module Python pour Kubernetes
 ```
 pip install kubernetes
 ansible-galaxy collection install kubernetes.core
 ```
 
-# Installation d'Ansible
+1.3 Installation d'Ansible
 ```
 pip install ansible
 ```
 
-# Verification d'installation
+1.4 Verification d'installation
 ```
 packer version
 ansible --version
@@ -127,7 +127,7 @@ ansible-galaxy collection list
 ```
 
 --------------------------------------------------------------------------------
-**2. Build de l'image avec Packer**
+# **2. Build de l'image avec Packer**
 Crée un fichier nommé ```nginx.pkr.hcl```. Packer va utiliser Docker pour construire l'image, y injecter le fichier index.html, puis la sauvegarder localement.
 
 ```
@@ -167,7 +167,7 @@ packer init . && packer build nginx.pkr.hcl
 
 
 --------------------------------------------------------------------------------
-**3. Import de l'image dans K3d**
+# **3. Import de l'image dans K3d**
 C'est une étape cruciale souvent oubliée. K3d est un cluster isolé ; il ne connaît pas l'image locale si on ne lui "injectes" pas.
 ```
 k3d image import my-custom-nginx:latest -c lab
@@ -175,7 +175,7 @@ k3d image import my-custom-nginx:latest -c lab
 
 
 --------------------------------------------------------------------------------
-**4. Déploiement via Ansible**
+# **4. Déploiement via Ansible**
 Au lieu de faire un kubectl apply, on utilise Ansible pour piloter Kubernetes. Crée un fichier '''deploy.yml'''.
 
 ```
@@ -205,35 +205,59 @@ Au lieu de faire un kubectl apply, on utilise Ansible pour piloter Kubernetes. C
                   imagePullPolicy: Never # Très important pour K3d !
                   ports:
                   - containerPort: 80
+    - name: Créer le service Nginx
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: custom-nginx-service
+            namespace: default
+          spec:
+            type: NodePort
+            selector:
+              app: custom-nginx
+            ports:
+              - port: 80
+                targetPort: 80
 ```
 
-Note : Il y aura besoin d'installer la collection community : 
-```
-ansible-galaxy collection install kubernetes.core
-```
+Note : Il y aura besoin d'installer la collection community. Assurez-vous que la commande ```ansible-galaxy collection install kubernetes.core``` de la partie 1 s'est exécuté correctement.
 
 --------------------------------------------------------------------------------
-**5. Pour aller chercher les points de "Degré d'automatisation" (Le Makefile)**
+# **5. Pour aller chercher les points de "Degré d'automatisation" (Le Makefile)**
 Le professeur a mentionné un Makefile. C'est le secret pour avoir les 4 points d'automatisation. Crée un fichier Makefile à la racine :
 
 ```
+# Nom de l'image et du cluster pour éviter les répétitions
+IMAGE_NAME=my-custom-nginx:latest
+CLUSTER_NAME=lab
+
+# La cible 'all' est celle exécutée par défaut si on tape juste 'make'
 all: build-image import-image deploy
 
 build-image:
+	@echo "--- Construction de l'image avec Packer ---"
 	packer init .
 	packer build nginx.pkr.hcl
 
 import-image:
-	k3d image import my-custom-nginx:latest -c lab
+	@echo "--- Import de l'image dans le cluster K3d ---"
+	k3d image import $(IMAGE_NAME) -c $(CLUSTER_NAME)
 
 deploy:
+	@echo "--- Déploiement via Ansible ---"
 	ansible-playbook deploy.yml
 
 clean:
-	kubectl delete deployment custom-nginx
-	docker rmi my-custom-nginx:latest
+	@echo "--- Nettoyage du déploiement ---"
+	kubectl delete deployment custom-nginx || true
+	kubectl delete service custom-nginx-service || true
 ```
 
+--------------------------------------------------------------------------------
+# Pour finir
+Il ne reste plus qu'à exécuter la commande ```make all```
 
 
 
