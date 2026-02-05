@@ -90,3 +90,150 @@ Cet atelier, **noté sur 20 points**, est évalué sur la base du barème suivan
 - Processus travail (quantité de commits, cohérence globale, interventions externes, ...) (4 points) 
 
 
+
+------------------------------------------------------------------------------------------------------
+-------------------------------------         Rapport       ------------------------------------------
+------------------------------------------------------------------------------------------------------
+
+
+**1. Installation des outils (Packer & Ansible)**
+Dans le terminal Codespaces, installation des dépendances manquantes :
+
+# Installation de Packer
+'''
+curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
+sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+sudo rm -f /etc/apt/sources.list.d/yarn.list
+sudo apt-get update && sudo apt-get install -y packer
+'''
+
+# Installation du module Python pour Kubernetes
+'''
+pip install kubernetes
+ansible-galaxy collection install kubernetes.core
+'''
+
+# Installation d'Ansible
+'''
+pip install ansible
+'''
+
+# Verification d'installation
+'''
+packer version
+ansible --version
+pip show kubernetes
+ansible-galaxy collection list
+'''
+
+--------------------------------------------------------------------------------
+**2. Build de l'image avec Packer**
+Crée un fichier nommé '''nginx.pkr.hcl'''. Packer va utiliser Docker pour construire l'image, y injecter le fichier index.html, puis la sauvegarder localement.
+
+'''
+packer {
+  required_plugins {
+    docker = {
+      version = ">= 1.0.8"
+      source  = "github.com/hashicorp/docker"
+    }
+  }
+}
+
+source "docker" "nginx" {
+  image  = "nginx:latest"
+  commit = true
+}
+
+build {
+  sources = ["source.docker.nginx"]
+
+  provisioner "file" {
+    source      = "index.html"
+    destination = "/usr/share/nginx/html/index.html"
+  }
+
+  post-processor "docker-tag" {
+    repository = "my-custom-nginx"
+    tag        = ["latest"]
+  }
+}
+'''
+
+==> Commande : 
+'''
+packer init . && packer build nginx.pkr.hcl
+'''
+
+
+--------------------------------------------------------------------------------
+**3. Import de l'image dans K3d**
+C'est une étape cruciale souvent oubliée. K3d est un cluster isolé ; il ne connaît pas l'image locale si on ne lui "injectes" pas.
+'''
+k3d image import my-custom-nginx:latest -c lab
+'''
+
+
+--------------------------------------------------------------------------------
+**4. Déploiement via Ansible**
+Au lieu de faire un kubectl apply, on utilise Ansible pour piloter Kubernetes. Crée un fichier '''deploy.yml'''.
+
+'''
+- hosts: localhost
+  tasks:
+    - name: Créer le déploiement Nginx
+      kubernetes.core.k8s:
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: custom-nginx
+            namespace: default
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: custom-nginx
+            template:
+              metadata:
+                labels:
+                  app: custom-nginx
+              spec:
+                containers:
+                - name: nginx
+                  image: my-custom-nginx:latest
+                  imagePullPolicy: Never # Très important pour K3d !
+                  ports:
+                  - containerPort: 80
+'''
+
+Note : Il y aura besoin d'installer la collection community : 
+'''
+ansible-galaxy collection install kubernetes.core
+'''
+
+--------------------------------------------------------------------------------
+**5. Pour aller chercher les points de "Degré d'automatisation" (Le Makefile)**
+Le professeur a mentionné un Makefile. C'est le secret pour avoir les 4 points d'automatisation. Crée un fichier Makefile à la racine :
+
+'''
+all: build-image import-image deploy
+
+build-image:
+	packer init .
+	packer build nginx.pkr.hcl
+
+import-image:
+	k3d image import my-custom-nginx:latest -c lab
+
+deploy:
+	ansible-playbook deploy.yml
+
+clean:
+	kubectl delete deployment custom-nginx
+	docker rmi my-custom-nginx:latest
+'''
+
+
+
+
