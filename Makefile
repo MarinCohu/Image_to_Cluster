@@ -5,6 +5,14 @@ CLUSTER_NAME=lab
 # La cible 'all' est celle exécutée par défaut si on tape juste 'make'
 all: build-image import-image deploy run
 
+# Nouvelle cible pour nettoyer la config locale et s'assurer du contexte
+clean-kube:
+	@echo "--- Nettoyage de la configuration Kubernetes locale ---"
+	k3d kubeconfig merge $(CLUSTER_NAME) --kubeconfig-switch-context || true
+	@echo "--- Nettoyage des anciennes ressources ---"
+	kubectl delete deployment custom-nginx --ignore-not-found=true
+	kubectl delete service custom-nginx-service --ignore-not-found=true
+
 build-image:
 	@echo "--- Construction de l'image avec Packer ---"
 	packer init .
