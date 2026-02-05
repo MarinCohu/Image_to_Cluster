@@ -256,6 +256,8 @@ clean:
 
 # Automatisation du tunnel pour voir le site
 run:
+	@echo "--- Attente que le Pod soit prêt ---"
+	kubectl wait --for=condition=ready pod -l app=custom-nginx --timeout=60s
 	@echo "--- Lancement du tunnel sur le port 8081 ---"
 	@echo "Lien : https://$(CODESPACE_NAME)-8081.$(GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN)"
 	kubectl port-forward svc/custom-nginx-service 8081:80
@@ -263,9 +265,10 @@ run:
 
 --------------------------------------------------------------------------------
 # Pour finir
-Il ne reste plus qu'à exécuter la commande ```make all``` et de cliquer sur le lien.
+Il ne reste plus qu'à exécuter la commande ```make all``` et d'aller sur le site (port 8081).
+Pour tout fermer propremment, utiliser la commande ```make clean```.
 
-# TADAA !
+# TADAA :) !
 
 
 
